@@ -1,0 +1,1052 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GeoGuard — Illegal Mining Detection</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#E7EDE2; --surface:#FFFFFF; --surface2:#F2F5EE; --line:#CBD8C2;
+  --paper:#FFFFFF; --ink:#16231C; --muted:#5B6B58;
+  --moss:#2E6B4B; --clay:#B14A26; --ochre:#B98A2E; --teal:#26647A;
+  box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+html,body{height:100%;margin:0}
+body{
+  background:var(--bg);
+  color:var(--ink); font-family:'IBM Plex Sans',system-ui,sans-serif;
+  display:flex; min-height:100%; position:relative;
+}
+
+/* Static topographic watermark — grounded in the subject (contour survey lines), no motion */
+#topo{position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.5}
+#topo svg{width:100%; height:100%}
+
+/* Slow-orbiting satellites, sparse and large, reinforcing the monitoring theme */
+#satfield{position:fixed; inset:0; z-index:0; pointer-events:none; overflow:hidden}
+#satfield .sat{position:absolute; opacity:.2; filter:grayscale(.3) drop-shadow(0 6px 10px rgba(22,35,28,.18))}
+@keyframes orbitA{from{transform:translate(-16vw,0) rotate(18deg)} to{transform:translate(116vw,-10vh) rotate(18deg)}}
+@keyframes orbitB{from{transform:translate(116vw,0) rotate(200deg)} to{transform:translate(-16vw,12vh) rotate(200deg)}}
+@keyframes orbitC{from{transform:translate(-16vw,40vh) rotate(-30deg)} to{transform:translate(116vw,-40vh) rotate(-30deg)}}
+@keyframes orbitD{from{transform:translate(116vw,-30vh) rotate(150deg)} to{transform:translate(-16vw,30vh) rotate(150deg)}}
+.side, .main{position:relative; z-index:1}
+.side{background:rgba(255,255,255,.92)}
+.main{background:transparent}
+h1,.brand,.section-title,.card .k,.stat-inline .si b{font-family:'Fraunces',Georgia,serif}
+.mono{font-family:'IBM Plex Mono',monospace}
+::-webkit-scrollbar{width:8px}::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px}
+
+/* Sidebar */
+.side{
+  width:240px; flex:0 0 240px; border-right:1px solid var(--line);
+  padding:22px 14px; display:flex; flex-direction:column; gap:4px;
+}
+.brand{font-size:19px; font-weight:600; letter-spacing:-.2px; margin:2px 4px 4px; display:flex; align-items:center; gap:9px}
+.brand .dot{width:11px;height:11px;border-radius:3px; background:var(--moss)}
+.tag{font-size:11.5px; color:var(--muted); margin:0 4px 20px; line-height:1.45}
+.step{
+  text-align:left; background:none; border:none; color:var(--muted); font-family:'IBM Plex Sans',inherit; font-size:13.5px; font-weight:600;
+  padding:10px 12px; border-radius:10px; cursor:pointer; display:flex; gap:10px; align-items:center; transition:background .15s ease;
+}
+.step .n{font-family:'IBM Plex Mono',monospace; font-size:11px; width:16px; color:var(--muted)}
+.step.active{background:var(--moss); color:#fff}
+.step.active .n{color:#fff}
+.step.done .n{color:var(--moss)}
+.step:hover{background:var(--surface2); color:var(--ink)}
+.sidefoot{margin-top:auto; font-size:11px; color:var(--muted); padding:12px 6px; border-top:1px solid var(--line)}
+.sidefoot a{color:var(--muted)}
+
+/* Case workflow steps get a distinct treatment (dark) from top-level nav (moss),
+   so it's visually clear which list you're in */
+#stepList .workstep.active{background:var(--ink); color:#fff}
+#stepList .workstep.active .n{color:#fff}
+
+/* Main */
+.main{flex:1; overflow-y:auto; padding:32px 36px 60px; max-width:1000px}
+.crumb{font-size:12px; color:var(--muted); font-weight:600; margin-bottom:8px}
+h1{font-size:30px; margin:0 0 6px; font-weight:600; letter-spacing:-.3px}
+.sub{color:var(--muted); font-size:13.5px; margin:0 0 24px; max-width:62ch; line-height:1.55}
+.panel{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:22px; margin-bottom:18px}
+.grid{display:grid; grid-template-columns:repeat(3,1fr); gap:14px}
+.card{background:var(--surface); border:1px solid var(--line); border-top:3px solid var(--moss); border-radius:10px; padding:16px; position:relative; transition:border-color .15s ease}
+.card[onclick]{cursor:pointer}
+.card[onclick]:hover{border-color:var(--moss)}
+.card .k{font-size:30px; font-weight:600}
+.card .l{font-size:11px; color:var(--muted); margin-top:6px; font-weight:600; letter-spacing:.2px}
+.btn{
+  background:var(--moss); color:#fff; border:none; padding:12px 22px; border-radius:9px;
+  font-family:'IBM Plex Sans',inherit; font-size:13.5px; font-weight:600; cursor:pointer; transition:background .15s ease;
+}
+.btn:hover:not(:disabled){background:#255a3e}
+.btn:disabled{opacity:.4; cursor:not-allowed}
+.btn.ghost{background:transparent; border:1.5px solid var(--line); color:var(--ink)}
+.btn.ghost:hover:not(:disabled){border-color:var(--moss); background:var(--surface2)}
+.row{display:flex; gap:10px; align-items:center; flex-wrap:wrap}
+.pill{font-size:11.5px; padding:5px 12px; border-radius:7px; border:1.5px solid var(--line); color:var(--muted); font-weight:600; white-space:nowrap; display:inline-flex; align-items:center; gap:5px}
+.pill.high{border-color:var(--clay); color:var(--clay); background:rgba(177,74,38,.09)}
+.pill.med{border-color:var(--ochre); color:var(--ochre); background:rgba(185,138,46,.1)}
+.pill.ok{border-color:var(--moss); color:var(--moss); background:rgba(46,107,75,.09)}
+
+.section-title{font-size:12.5px; font-weight:700; color:var(--moss); margin:28px 0 10px; padding-left:10px; border-left:3px solid var(--moss)}
+.section-title:first-of-type{margin-top:4px}
+.actions-row{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:6px}
+.panel.compact{padding:18px 22px}
+.stat-inline{display:flex; gap:18px; flex-wrap:wrap; margin-top:10px}
+.stat-inline .si{display:flex; flex-direction:column}
+.stat-inline .si b{font-size:19px}
+.stat-inline .si span{font-size:10.5px; color:var(--muted); font-weight:600; margin-top:2px}
+.watchlist{display:flex; flex-direction:column; gap:10px}
+.watch-row{display:flex; align-items:center; justify-content:space-between; gap:16px; background:var(--surface2); border:1px solid var(--line); border-left:3px solid var(--line); border-radius:8px; padding:14px 16px; flex-wrap:wrap}
+.watch-row.flagged{border-left-color:var(--clay)}
+.watch-row .who{min-width:190px; flex:1 1 190px}
+.watch-row .who strong{font-size:13.5px; display:block; font-weight:600}
+.watch-row .who span{font-size:11.5px; color:var(--muted); display:block; margin-top:2px}
+.watch-row .meta{display:flex; align-items:center; gap:8px; flex-wrap:wrap; flex:2 1 320px}
+.watch-row .src{font-size:11px; color:var(--muted); white-space:nowrap; background:var(--bg); border:1px solid var(--line); padding:5px 10px; border-radius:7px}
+.watch-row .action{flex:0 0 auto; margin-left:auto}
+.watch-row .action .sub{white-space:nowrap; margin:0}
+.field{display:flex; flex-direction:column; gap:6px; margin-bottom:16px}
+.field label{font-size:12px; color:var(--muted); font-weight:600}
+.field input, .field select, .field textarea{
+  background:var(--bg); border:1.5px solid var(--line); color:var(--ink); padding:10px 12px; border-radius:8px; font-family:'IBM Plex Sans',inherit; font-size:13px;
+}
+.field input:focus, .field select:focus, .field textarea:focus{outline:none; border-color:var(--moss)}
+.dropzone{
+  border:2px dashed var(--line); border-radius:10px; padding:24px; text-align:center; color:var(--muted); font-size:12.5px; cursor:pointer; font-weight:600; transition:border-color .15s ease;
+}
+.dropzone:hover{border-color:var(--moss)}
+.dropzone.filled{border-color:var(--moss); color:var(--moss); border-style:solid; background:rgba(46,107,75,.06)}
+.two{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+table{width:100%; border-collapse:collapse; font-size:12.5px}
+th{text-align:left; color:var(--muted); font-weight:700; padding:10px 8px; border-bottom:1.5px solid var(--line); font-size:11px}
+td{padding:11px 8px; border-bottom:1px solid var(--line)}
+tr:last-child td{border-bottom:none}
+tr[onclick]:hover td{background:var(--surface2)}
+.disclaimer{font-size:11.5px; color:var(--muted); border-left:3px solid var(--ochre); padding:10px 14px; margin-top:14px; background:var(--surface2); border-radius:0 8px 8px 0}
+
+/* Map */
+.mapwrap{position:relative; height:340px; border-radius:10px; overflow:hidden; border:1px solid var(--line)}
+.mapwrap svg{width:100%; height:100%; display:block; background:var(--surface2)}
+.legend{position:absolute; bottom:12px; left:12px; background:rgba(255,255,255,.94); border:1px solid var(--line); border-radius:8px; padding:10px 12px; font-size:11px; display:flex; flex-direction:column; gap:6px}
+.legend span{display:flex; align-items:center; gap:7px; font-weight:600}
+.sw{width:10px;height:10px;border-radius:3px; display:inline-block}
+
+.imgpair{display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px}
+.imgbox{background:var(--surface2); border:1px solid var(--line); border-radius:10px; height:120px; display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:11px; font-weight:600; position:relative; overflow:hidden}
+.imgbox .cap{position:absolute; bottom:8px; left:10px; font-size:10px; color:var(--muted); font-weight:500}
+
+.spin{width:14px;height:14px;border:2px solid var(--line); border-top-color:var(--moss); border-radius:50%; animation:sp .7s linear infinite; display:inline-block}
+@keyframes sp{to{transform:rotate(360deg)}}
+
+.audit{font-size:12px; color:var(--muted); display:flex; gap:8px; padding:7px 0; border-bottom:1px dashed var(--line)}
+.audit:last-child{border-bottom:none}
+
+/* --- Auth screen (3D flip card) --- */
+#authScreen{position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; background:radial-gradient(ellipse at 50% 20%, #2E6B4B22, transparent 60%), var(--bg)}
+.authWrap{perspective:1400px; width:380px; max-width:92vw}
+.authCard{position:relative; width:100%; min-height:430px; transition:transform .6s cubic-bezier(.4,.2,.2,1); transform-style:preserve-3d}
+.authCard.flipped{transform:rotateY(180deg)}
+.authFace{position:absolute; inset:0; backface-visibility:hidden; background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:30px 26px; box-shadow:0 20px 45px -18px rgba(22,35,28,.35), 0 2px 0 rgba(255,255,255,.6) inset}
+.authFace.back{transform:rotateY(180deg)}
+.authBrand{display:flex; align-items:center; gap:9px; font-family:'Fraunces',serif; font-size:20px; font-weight:600; margin-bottom:2px}
+.authBrand .dot{width:11px;height:11px;border-radius:3px; background:var(--moss)}
+.authSub{font-size:12px; color:var(--muted); margin:2px 0 20px}
+.authErr{font-size:11.5px; color:var(--clay); min-height:16px; margin-top:2px}
+.authSwitch{font-size:12px; color:var(--muted); text-align:center; margin-top:16px}
+.authSwitch a{color:var(--moss); font-weight:600; cursor:pointer}
+/* 3D officer ID card, tilts toward the pointer */
+.idcard{perspective:900px; margin:14px 0}
+.idcard-inner{transform-style:preserve-3d; background:linear-gradient(135deg,var(--moss),#1c4a33); border-radius:12px; padding:18px 20px; color:#fff; box-shadow:0 16px 30px -14px rgba(22,35,28,.5); transition:transform .25s ease; transform:rotateX(0) rotateY(0)}
+.idcard:hover .idcard-inner{transform:rotateX(6deg) rotateY(-8deg)}
+.idcard .badge-row{display:flex; justify-content:space-between; align-items:flex-start}
+.idcard .badge-id{font-family:'IBM Plex Mono',monospace; font-size:15px; letter-spacing:.5px; font-weight:700}
+.idcard .badge-chip{width:30px;height:22px;border-radius:4px; background:linear-gradient(135deg,#B98A2E,#E0B65C)}
+.idcard .badge-name{font-family:'Fraunces',serif; font-size:18px; margin-top:14px}
+.idcard .badge-meta{font-size:11px; opacity:.85; margin-top:3px}
+/* Subtle 3D tilt on stat/metric cards */
+.grid{perspective:800px}
+.card{transition:transform .2s ease, box-shadow .2s ease}
+.card[onclick]:hover{transform:rotateX(4deg) translateY(-3px); box-shadow:0 14px 22px -14px rgba(22,35,28,.35)}
+@media (max-width:820px){
+  body{flex-direction:column}
+  .side{width:100%; flex-direction:row; overflow-x:auto; padding:10px; gap:8px; align-items:center}
+  .step{white-space:nowrap}
+  .sidefoot{display:none}
+  .main{padding:22px 18px 50px; max-width:100%}
+  .grid, .two, .imgpair{grid-template-columns:1fr}
+}
+:root:not([data-theme="light"]){ }
+@media print{
+  #topo{display:none}
+  body *{visibility:hidden}
+  #printArea, #printArea *{visibility:visible}
+  #printArea{position:absolute; left:0; top:0; width:100%; margin:0}
+  #printArea .panel{box-shadow:none; border:1px solid #ccc}
+}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+
+<div id="topo" aria-hidden="true">
+  <svg viewBox="0 0 1200 900" preserveAspectRatio="xMidYMid slice">
+    <g fill="none" stroke="#CBD8C2" stroke-width="1">
+      <path d="M -50 120 Q 250 60, 500 130 T 1000 100 T 1300 160"/>
+      <path d="M -50 190 Q 260 130, 520 200 T 1010 175 T 1300 230"/>
+      <path d="M -50 260 Q 270 205, 540 270 T 1020 250 T 1300 300"/>
+      <path d="M -50 420 Q 300 360, 560 430 T 1040 400 T 1300 450"/>
+      <path d="M -50 490 Q 310 435, 580 500 T 1050 475 T 1300 520"/>
+      <path d="M -50 560 Q 320 505, 600 570 T 1060 545 T 1300 590"/>
+      <path d="M -50 700 Q 300 650, 560 715 T 1000 690 T 1300 740"/>
+      <path d="M -50 770 Q 310 720, 580 785 T 1010 760 T 1300 810"/>
+    </g>
+  </svg>
+</div>
+
+<div id="satfield" aria-hidden="true">
+  <div class="sat" style="top:4%;  font-size:150px; animation:orbitA 72s linear infinite;">🛰️</div>
+  <div class="sat" style="top:18%; font-size:190px; animation:orbitD 90s linear infinite -12s;">🛰️</div>
+  <div class="sat" style="top:32%; font-size:130px; animation:orbitC 80s linear infinite -30s;">🛰️</div>
+  <div class="sat" style="top:48%; font-size:170px; animation:orbitB 95s linear infinite -6s;">🛰️</div>
+  <div class="sat" style="top:64%; font-size:140px; animation:orbitA 84s linear infinite -48s;">🛰️</div>
+  <div class="sat" style="top:80%; font-size:180px; animation:orbitD 76s linear infinite -60s;">🛰️</div>
+  <div class="sat" style="top:92%; font-size:120px; animation:orbitC 88s linear infinite -20s;">🛰️</div>
+</div>
+
+<div id="authScreen">
+  <div class="authWrap">
+    <div class="authCard" id="authCard">
+      <div class="authFace front">
+        <div class="authBrand"><span class="dot"></span>GeoGuard</div>
+        <div class="authSub">Officer sign-in — access is tied to your Officer ID.</div>
+        <div class="field"><label>Officer ID</label><input id="loginId" placeholder="e.g. GG-OFF-1042"></div>
+        <div class="field"><label>Password</label><input id="loginPw" type="password" placeholder="••••••••"></div>
+        <div class="authErr" id="loginErr"></div>
+        <button class="btn" style="width:100%" onclick="doLogin()">Sign in →</button>
+        <div class="authSwitch">New officer? <a onclick="flipAuth(true)">Create an account</a></div>
+      </div>
+      <div class="authFace back">
+        <div class="authBrand"><span class="dot"></span>Officer sign-up</div>
+        <div class="authSub">You'll be issued a unique Officer ID — it's your key to running satellite checks and capturing site photos.</div>
+        <div class="field"><label>Full name</label><input id="suName" placeholder="e.g. R. Mishra"></div>
+        <div class="field"><label>Department / role</label><input id="suDept" placeholder="e.g. Field Officer, Kanpur Dehat"></div>
+        <div class="field"><label>Choose a password</label><input id="suPw" type="password" placeholder="••••••••"></div>
+        <div class="authErr" id="suErr"></div>
+        <button class="btn" style="width:100%" onclick="doSignup()">Create account &amp; issue ID →</button>
+        <div class="authSwitch">Already registered? <a onclick="flipAuth(false)">Sign in</a></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<nav class="side" id="side">
+  <div class="brand"><span class="dot"></span>GeoGuard</div>
+  <div class="tag">Illegal mining detection — monitoring platform</div>
+  <div id="stepList"></div>
+  <div class="sidefoot" id="sidefoot">Decision-support tool.<br>Not a legal determination.<br><a href="#" onclick="if(confirm('Clear all saved cases and progress on this device?')){localStorage.removeItem(SAVE_KEY); location.reload();} return false;">Reset saved data</a></div>
+</nav>
+
+<main class="main" id="main"></main>
+
+<script>
+const NAV = [
+  {id:'dash', label:'Dashboard'},
+  {id:'watch', label:'Satellite Watch'},
+  {id:'lease', label:'Leases'},
+  {id:'alertsq', label:'Alerts'},
+  {id:'cases', label:'Cases'},
+  {id:'profile', label:'My profile'}
+];
+
+const steps = [
+  {id:'upload', label:'Upload imagery'},
+  {id:'analysis', label:'Run analysis'},
+  {id:'result', label:'Change result'},
+  {id:'alert', label:'Alert generated'},
+  {id:'case', label:'Create case'},
+  {id:'inspect', label:'Field inspection'},
+  {id:'report', label:'Case report'}
+];
+
+const SAVE_KEY = 'geoguard_state_v1';
+
+function loadState(){
+  try{
+    const raw = localStorage.getItem(SAVE_KEY);
+    if(raw) Object.assign(state, JSON.parse(raw));
+  }catch(e){ /* storage unavailable, continue with defaults */ }
+}
+function saveState(){
+  try{ localStorage.setItem(SAVE_KEY, JSON.stringify(state)); }catch(e){ /* ignore */ }
+}
+
+// --- Officer accounts & auth (prototype: plain localStorage, not real security) ---
+const OFFICERS_KEY = 'geoguard_officers_v1';
+const SESSION_KEY = 'geoguard_session_v1';
+
+function getOfficers(){ try{ return JSON.parse(localStorage.getItem(OFFICERS_KEY))||[]; }catch(e){ return []; } }
+function saveOfficers(list){ try{ localStorage.setItem(OFFICERS_KEY, JSON.stringify(list)); }catch(e){} }
+function currentOfficer(){
+  const id = (()=>{ try{ return localStorage.getItem(SESSION_KEY); }catch(e){ return null; } })();
+  if(!id) return null;
+  return getOfficers().find(o=>o.id===id) || null;
+}
+function genOfficerId(existing){
+  let id;
+  do{ id = 'GG-OFF-' + String(1000+Math.floor(Math.random()*9000)); }
+  while(existing.some(o=>o.id===id));
+  return id;
+}
+function flipAuth(toSignup){
+  document.getElementById('authCard').classList.toggle('flipped', toSignup);
+  document.getElementById('loginErr').textContent = '';
+  document.getElementById('suErr').textContent = '';
+}
+function doSignup(){
+  const name = document.getElementById('suName').value.trim();
+  const dept = document.getElementById('suDept').value.trim();
+  const pw = document.getElementById('suPw').value;
+  const err = document.getElementById('suErr');
+  if(!name || !pw){ err.textContent = 'Name and password are required.'; return; }
+  const officers = getOfficers();
+  const id = genOfficerId(officers);
+  officers.push({id, name, dept: dept||'Field Officer', pw, joined:new Date().toLocaleDateString()});
+  saveOfficers(officers);
+  try{ localStorage.setItem(SESSION_KEY, id); }catch(e){}
+  boot();
+}
+function doLogin(){
+  const id = document.getElementById('loginId').value.trim();
+  const pw = document.getElementById('loginPw').value;
+  const err = document.getElementById('loginErr');
+  const officer = getOfficers().find(o=>o.id===id && o.pw===pw);
+  if(!officer){ err.textContent = 'Officer ID and password did not match any registered account.'; return; }
+  try{ localStorage.setItem(SESSION_KEY, id); }catch(e){}
+  boot();
+}
+function logout(){
+  try{ localStorage.removeItem(SESSION_KEY); }catch(e){}
+  boot();
+}
+
+// Seed data for automated satellite monitoring. In production this table would be
+// written by a scheduled job polling a provider's subscription API (e.g. Planet's
+// Subscriptions API or Sentinel Hub Statistical API), not typed by hand.
+const WATCH_SEED = [
+  {khasra:'412/2', owner:'Shivam Minerals Pvt. Ltd.', village:'Rasoolabad, Bhognipur', source:'PlanetScope (3m, daily)', hoursAgo:6, changeDetected:true, risk:'HIGH', type:'Boundary excavation'},
+  {khasra:'145/1', owner:'Bithoor Riverbed Minerals', village:'Bithoor', source:'PlanetScope (3m, daily)', hoursAgo:9, changeDetected:true, risk:'MEDIUM', type:'Unauthorized access point', note:'Modelled on a real NGT case (UP–Haryana border, Karnal, 2022): ~0.74 ha at ~2m depth, ~14,800 m³ extracted via unpermitted entry/exit points.'},
+  {khasra:'77/1', owner:'Ganga Aggregates Co.', village:'Madhopur, Sivrajpur', source:'PlanetScope (3m, daily)', hoursAgo:14, changeDetected:false, risk:null},
+  {khasra:'88/3', owner:'Narval Stone Crushers', village:'Narval', source:'PlanetScope (3m, daily)', hoursAgo:19, changeDetected:false, risk:null},
+  {khasra:'210/4', owner:'Trimurti Quarries', village:'Chaubepur', source:'Sentinel-2 (10m, ~5-day)', hoursAgo:38, changeDetected:false, risk:null},
+  {khasra:'63/2', owner:'Maharajpur Aggregates', village:'Maharajpur', source:'Sentinel-2 (10m, ~5-day)', hoursAgo:62, changeDetected:false, risk:null}
+];
+
+const state = {
+  current: 'dash',
+  furthest: 0,
+  leaseSelected: false,
+  beforeUploaded: false,
+  afterUploaded: false,
+  analysisRun: false,
+  caseCreated: false,
+  officer: '',
+  priority: 'High',
+  status: 'NEW',
+  inspectionDone: false,
+  auditLog: [],
+  cases: [],
+  leaseFilter: null,
+  alertFilter: null,
+  currentKhasra: '412/2',
+  currentCaseId: 'CASE-2026-412-2',
+  watch: WATCH_SEED.map(w=>({...w})),
+  lastGlobalCheck: null,
+  checking: false
+};
+
+function requireAuth(){
+  if(!currentOfficer()){ alert('Sign in with a registered Officer ID to access satellite imagery.'); return false; }
+  return true;
+}
+function runSatelliteCheck(){
+  if(!requireAuth()) return;
+  state.checking = true;
+  render();
+  setTimeout(()=>{
+    state.watch.forEach(w=>{
+      const dailySource = w.source.indexOf('daily')>-1;
+      // PlanetScope revisits ~daily, so a run always brings it current.
+      // Sentinel-2 only refreshes once its ~5-day cycle has actually elapsed.
+      if(dailySource || w.hoursAgo >= 120){
+        w.hoursAgo = 0;
+        w.changeDetected = Math.random() < 0.18;
+        w.risk = w.changeDetected ? (Math.random()<0.4?'HIGH':'MEDIUM') : null;
+      }
+    });
+    state.watch[0].changeDetected = true; state.watch[0].risk = 'HIGH'; // keep the demo lease's flagged change visible
+    state.lastGlobalCheck = new Date().toLocaleString();
+    state.checking = false;
+    log('Ran scheduled satellite check across '+state.watch.length+' leases');
+    render();
+  }, 1100);
+}
+
+const LEASE_DB = {
+  '412/2': {owner:'Shivam Minerals Pvt. Ltd.', mineral:'Sand & Bajri', district:'Kanpur Dehat', tehsil:'Bhognipur', village:'Rasoolabad', khasra:'412/2', area:'8.5 ha', valid:'12 Mar 2023 – 11 Mar 2027', active:true},
+  '77/1': {owner:'Ganga Aggregates Co.', mineral:'Stone', district:'Kanpur Dehat', tehsil:'Sivrajpur', village:'Madhopur', khasra:'77/1', area:'5.2 ha', valid:'05 Jun 2022 – 04 Jun 2027', active:true},
+  '210/4': {owner:'Trimurti Quarries', mineral:'Sand', district:'Kanpur Nagar', tehsil:'Chaubepur', village:'Chaubepur', khasra:'210/4', area:'3.9 ha', valid:'18 Nov 2021 – 17 Nov 2026', active:true},
+  '88/3': {owner:'Narval Stone Crushers', mineral:'Stone', district:'Kanpur Dehat', tehsil:'Narval', village:'Narval', khasra:'88/3', area:'6.1 ha', valid:'02 Feb 2024 – 01 Feb 2029', active:true},
+  '145/1': {owner:'Bithoor Riverbed Minerals', mineral:'Sand & Bajri', district:'Kanpur Nagar', tehsil:'Bithoor', village:'Bithoor', khasra:'145/1', area:'4.4 ha', valid:'22 Aug 2023 – 21 Aug 2028', active:true},
+  '63/2': {owner:'Maharajpur Aggregates', mineral:'Stone', district:'Kanpur Dehat', tehsil:'Maharajpur', village:'Maharajpur', khasra:'63/2', area:'2.8 ha', valid:'10 Apr 2022 – 09 Apr 2027', active:true},
+  '55/6': {owner:'Kanpur Riverbed Minerals', mineral:'Sand', district:'Kanpur Nagar', tehsil:'Bithoor', village:'Ratanpur', khasra:'55/6', area:'3.0 ha', valid:'01 Jan 2019 – 31 Dec 2024', active:false}
+};
+
+const RESULT_DB = {
+  '412/2': {activity:'Probable Excavation', changedArea:14.0, inside:10.0, outside:4.0, pctOutside:28.6, confidence:0.86, risk:'HIGH'},
+  '145/1': {activity:'Probable Excavation (access road + pit)', changedArea:1.1, inside:0.4, outside:0.7, pctOutside:63.6, confidence:0.79, risk:'MEDIUM'}
+};
+function resultFor(khasra){
+  return RESULT_DB[khasra] || {activity:'No significant change', changedArea:0.2, inside:0.2, outside:0.0, pctOutside:0, confidence:0.93, risk:'LOW'};
+}
+
+let LEASE = LEASE_DB['412/2'];
+let RESULT = resultFor('412/2');
+
+function selectLease(khasra){
+  LEASE = LEASE_DB[khasra];
+  RESULT = resultFor(khasra);
+  state.currentKhasra = khasra;
+  state.leaseSelected = true;
+  state.furthest = 0;
+  state.beforeUploaded = false;
+  state.afterUploaded = false;
+  state.analysisRun = false;
+  state.caseCreated = false;
+  const off = currentOfficer();
+  state.officer = off ? (off.name+' ('+off.dept+') — '+off.id) : '';
+  state.priority = 'High';
+  state.status = 'NEW';
+  state.inspectionDone = false;
+  state.currentCaseId = 'CASE-2026-'+khasra.replace('/','-');
+  log('Opened lease '+khasra+' for investigation');
+  goTo('upload');
+}
+
+const ALERTS = [
+  {lease:'Shivam Minerals Pvt. Ltd.', khasra:'412/2', village:'Rasoolabad, Bhognipur', risk:'HIGH', outside:'4.0 ha', date:'02 Sep 2026', status:'New', primary:true},
+  {lease:'Bithoor Riverbed Minerals', khasra:'145/1', village:'Bithoor', risk:'MEDIUM', outside:'0.7 ha', date:'30 Aug 2026', status:'Under verification'},
+  {lease:'Ganga Aggregates Co.', khasra:'77/1', village:'Madhopur, Sivrajpur', risk:'MEDIUM', outside:'1.2 ha', date:'29 Aug 2026', status:'Under verification'},
+  {lease:'Trimurti Quarries', khasra:'210/4', village:'Chaubepur', risk:'LOW', outside:'0.4 ha', date:'21 Aug 2026', status:'Under verification'},
+  {lease:'Narval Stone Crushers', khasra:'88/3', village:'Narval', risk:'MEDIUM', outside:'1.8 ha', date:'15 Aug 2026', status:'Closed — no violation'}
+];
+
+function activeAlerts(){ return ALERTS.filter(a=>a.status!=='Closed — no violation'); }
+function highRiskActiveAlerts(){ return activeAlerts().filter(a=>a.risk==='HIGH'); }
+function sumHa(arr){ return arr.reduce((t,a)=>t+parseFloat(a.outside),0).toFixed(1); }
+
+const LEASES = Object.values(LEASE_DB);
+
+function filterLeases(){
+  const q = document.getElementById('leaseSearch').value.toLowerCase();
+  document.querySelectorAll('#leaseTable tr[data-row]').forEach(row=>{
+    row.style.display = row.dataset.row.includes(q) ? '' : 'none';
+  });
+}
+
+async function getDownloads(){
+  try{
+    if(window.claude && typeof window.claude.use === 'function'){
+      return await window.claude.use('downloads');
+    }
+  }catch(e){ /* fall through */ }
+  return null;
+}
+
+async function exportGeoJSON(){
+  const geo = {type:'FeatureCollection', features:[
+    {type:'Feature', properties:{name:'Lease boundary', owner:LEASE.owner, khasra:LEASE.khasra}, geometry:{type:'Polygon', coordinates:[[[80.0090,26.2910],[80.0140,26.2916],[80.0148,26.2875],[80.0110,26.2856],[80.0086,26.2868],[80.0090,26.2910]]]}},
+    {type:'Feature', properties:{name:'Detected change', area_ha:RESULT.outside}, geometry:{type:'Polygon', coordinates:[[[80.0118,26.2900],[80.0142,26.2903],[80.0145,26.2882],[80.0122,26.2872],[80.0110,26.2888],[80.0118,26.2900]]]}}
+  ]};
+  const filename = 'lease_'+LEASE.khasra.replace('/','-')+'_boundary.geojson';
+  const jsonStr = JSON.stringify(geo, null, 2);
+  const downloads = await getDownloads();
+  try{
+    if(downloads){
+      await downloads.save({filename, data: jsonStr});
+    } else {
+      // Fallback for when this page is opened outside the artifact viewer (e.g. as a plain local file)
+      const blob = new Blob([jsonStr], {type:'application/geo+json'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+    log('Exported lease + detected-change boundary as GeoJSON');
+    render();
+  }catch(e){
+    if(!(e && e.code === 'declined')) console.error('GeoJSON export failed', e);
+  }
+}
+
+function log(action){
+  const off = currentOfficer();
+  state.auditLog.push({t:new Date().toLocaleTimeString(), a:action, u: off ? (off.id+' — '+off.name) : 'unauthenticated'});
+  saveState();
+}
+
+function buildReportPDF(){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:'pt', format:'a4'});
+  const left = 48, maxWidth = 500;
+  let y = 56;
+  function text(str, size, bold){
+    doc.setFont('helvetica', bold ? 'bold' : 'normal');
+    doc.setFontSize(size);
+    const wrapped = doc.splitTextToSize(str, maxWidth);
+    doc.text(wrapped, left, y);
+    y += (size*1.35) * wrapped.length;
+  }
+  function gap(px){ y += px; }
+
+  text('Suspected Unauthorized Activity — Case Report', 15, true);
+  text('Directorate of Geology and Mining, Uttar Pradesh · Minor Mineral (MMDR Act, 1957)', 9);
+  text(state.currentCaseId + ' · Generated ' + new Date().toLocaleDateString(), 9);
+  gap(10);
+  text('Location: ' + LEASE.village + ', ' + LEASE.tehsil + ', ' + LEASE.district, 10.5);
+  text('Khasra no.: ' + LEASE.khasra, 10.5);
+  text('Lease owner: ' + LEASE.owner, 10.5);
+  text('Mineral: ' + LEASE.mineral, 10.5);
+  text('Lease validity: ' + LEASE.valid, 10.5);
+  gap(8);
+  text('Detected activity: ' + RESULT.activity, 10.5);
+  text('Period compared: 14 Jan 2026 → 02 Sep 2026', 10.5);
+  text('Changed area: ' + RESULT.changedArea + ' ha (' + RESULT.outside + ' ha outside lease)', 10.5);
+  text('Model confidence: ' + (RESULT.confidence*100).toFixed(0) + '%', 10.5);
+  text('Assigned officer: ' + (state.officer || '—'), 10.5);
+  text('Case status: ' + state.status, 10.5);
+  gap(12);
+  text('AI and geospatial outputs are decision-support information. Final determination requires authorized field verification.', 9);
+  gap(4);
+  text('Reference: a comparably large violation near river Son, Sonbhadra, drew a combined ₹15.96 crore NGT fine on two firms in 2023 — this case\'s scale (' + RESULT.outside + ' ha outside lease) sits in a similar high-severity range.', 9);
+  gap(14);
+  text('Audit history', 11.5, true);
+  if(state.auditLog.length){
+    state.auditLog.forEach(a => text(a.t + '  —  ' + a.a, 9));
+  } else {
+    text('No actions recorded yet.', 9);
+  }
+  return doc.output('blob');
+}
+
+async function downloadReportPDF(){
+  const filename = state.currentCaseId + '.pdf';
+  try{
+    const blob = buildReportPDF();
+    const downloads = await getDownloads();
+    if(downloads){
+      await downloads.save({filename, data: blob});
+    } else {
+      // Fallback for when this page is opened outside the artifact viewer
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+    log('Downloaded case report as PDF ('+state.currentCaseId+')');
+    render();
+  }catch(e){
+    if(!(e && e.code === 'declined')) console.error('PDF export failed', e);
+  }
+}
+
+function goTo(id, filter){
+  const idx = steps.findIndex(s=>s.id===id);
+  if(idx > state.furthest) state.furthest = idx;
+  state.current = id;
+  if(id==='lease') state.leaseFilter = filter || null;
+  if(id==='alertsq') state.alertFilter = filter || null;
+  render();
+}
+
+function renderSidebar(){
+  const el = document.getElementById('stepList');
+  const navHtml = NAV.map(n=>{
+    const cls = n.id===state.current ? 'active' : '';
+    return `<button class="step ${cls}" onclick="goTo('${n.id}')"><span class="n">●</span>${n.label}</button>`;
+  }).join('');
+  let workHtml = '';
+  if(state.leaseSelected){
+    const activeIdx = steps.findIndex(x=>x.id===state.current);
+    workHtml = `<div class="sidefoot" style="border-top:1px solid var(--line); border-bottom:none; margin:14px 0 4px; padding:0 6px 8px">Active case — Khasra ${LEASE.khasra}</div>` +
+      steps.map((s,i)=>{
+        const cls = 'workstep ' + (s.id===state.current ? 'active' : (i < activeIdx ? 'done' : ''));
+        const locked = i > state.furthest;
+        return `<button class="step ${cls}" ${locked?'disabled style="opacity:.4; cursor:not-allowed"':''} onclick="${locked?'':`goTo('${s.id}')`}"><span class="n">${i<activeIdx?'✓':String(i+1).padStart(2,'0')}</span>${s.label}</button>`;
+      }).join('');
+  }
+  el.innerHTML = navHtml + workHtml;
+  const off = currentOfficer();
+  const foot = document.getElementById('sidefoot');
+  if(off && foot){
+    foot.innerHTML = `<span class="mono" style="color:var(--moss); font-weight:700">${off.id}</span><br>${off.name}<br>Decision-support tool. Not a legal determination.<br><a href="#" onclick="if(confirm('Clear all saved cases and progress on this device?')){localStorage.removeItem(SAVE_KEY); location.reload();} return false;">Reset saved data</a> · <a href="#" onclick="logout(); return false;">Sign out</a>`;
+  }
+}
+
+function contourMap(showDetection){
+  // Stylized topographic map: lease boundary polygon + optional detection polygon
+  return `
+  <div class="mapwrap">
+    <svg viewBox="0 0 600 340">
+      ${[...Array(7)].map((_,i)=>`<path d="M -20 ${20+i*48} Q 150 ${5+i*48}, 300 ${25+i*48} T 620 ${15+i*48}" stroke="#CBD8C2" stroke-width="1" fill="none"/>`).join('')}
+      <polygon points="180,90 400,70 430,190 260,240 150,200" fill="none" stroke="#26647A" stroke-width="2.5"/>
+      <text x="180" y="80" fill="#26647A" font-size="11" font-weight="700" font-family="IBM Plex Mono">LEASE BOUNDARY — Khasra ${LEASE.khasra}</text>
+      ${showDetection ? `
+      <polygon points="330,110 420,120 435,175 350,200 300,160" fill="#B14A2633" stroke="#B14A26" stroke-width="2"/>
+      <text x="335" y="215" fill="#B14A26" font-size="11" font-weight="700" font-family="IBM Plex Mono">DETECTED CHANGE (${RESULT.outside.toFixed(1)} ha outside)</text>
+      <circle cx="415" cy="130" r="4" fill="#B98A2E"/>
+      ` : ''}
+    </svg>
+    <div class="legend">
+      <span><span class="sw" style="background:#26647A"></span>Lease boundary</span>
+      ${showDetection?`<span><span class="sw" style="background:#B14A26"></span>Detected excavation</span>`:''}
+    </div>
+  </div>`;
+}
+
+function screens(){
+  const s = {};
+
+  s.watch = `
+    <div class="crumb">Automated monitoring</div>
+    <h1>Satellite Watch</h1>
+    <p class="sub">Every registered lease is checked against the latest satellite pass automatically. If nothing changed, there's nothing to do — you only act on the ones flagged below. No site visit needed just to check.</p>
+
+    <div class="section-title">Status</div>
+    <div class="grid" style="grid-template-columns:1fr 1fr 1.4fr; margin-bottom:16px">
+      <div class="card"><div class="k">${state.watch.filter(w=>w.changeDetected).length} / ${state.watch.length}</div><div class="l">Sites flagged today</div></div>
+      <div class="card"><div class="k">${state.watch.filter(w=>w.hoursAgo<24).length}</div><div class="l">Checked within 24h</div></div>
+      <div class="card"><div class="k" style="font-size:16px">${state.lastGlobalCheck || 'Not run this session'}</div><div class="l">Last global check</div></div>
+    </div>
+
+    <div class="section-title">Monitoring feed</div>
+    <div class="panel">
+      <div class="row" style="justify-content:flex-end; margin-bottom:14px">
+        <button class="btn" ${state.checking?'disabled':''} onclick="runSatelliteCheck()">${state.checking?'<span class="spin"></span> Checking latest passes…':'Check for changes now'}</button>
+      </div>
+      <div class="watchlist">
+        ${state.watch.map(w=>{
+          const fresh = w.hoursAgo < 24;
+          const canInvestigate = w.changeDetected && !!LEASE_DB[w.khasra];
+          const riskCls = w.risk==='HIGH'?'high':(w.risk==='MEDIUM'?'med':'');
+          return `<div class="watch-row ${w.changeDetected?'flagged':''}">
+          <div class="who">
+            <strong>${w.owner}</strong>
+            <span>Khasra ${w.khasra} · ${w.village}${w.type?' · '+w.type:''}</span>
+            ${w.note?`<span style="display:block; margin-top:4px; font-size:10.5px; color:var(--muted); max-width:340px; line-height:1.4">${w.note}</span>`:''}
+          </div>
+          <div class="meta">
+            <span class="src">${w.source}</span>
+            <span class="pill ${fresh?'ok':''}">${w.hoursAgo===0?'Just now':w.hoursAgo+'h ago'}</span>
+            ${w.changeDetected?`<span class="pill ${riskCls}">${w.risk} — change detected</span>`:'<span class="pill">No change</span>'}
+          </div>
+          <div class="action">${canInvestigate?`<button class="btn ghost" onclick="selectLease('${w.khasra}')">Investigate →</button>`:(w.changeDetected?'<button class="btn ghost" disabled>Investigate →</button>':'<span class="sub" style="margin:0">No action needed</span>')}</div>
+        </div>`}).join('')}
+      </div>
+    </div>
+    <div class="panel">
+      <strong style="font-size:14px">How this runs in production</strong>
+      <p class="sub" style="margin:6px 0 0">A scheduled job (not a person) polls a satellite provider's subscription API for each lease's coordinates once new imagery is available, runs it through the change-detection model, and writes a row here. <strong style="color:var(--ink)">PlanetScope</strong> images almost the entire planet daily at 3m resolution, which is what makes a real 24-hour check possible; free <strong style="color:var(--ink)">Sentinel-2</strong> imagery (10m, ESA/Copernicus) fills in on a ~5-day cycle as a lower-cost fallback. Officers only get pulled in once something is actually flagged.</p>
+    </div>
+  `;
+
+  s.dash = `
+    <div class="crumb">Overview</div>
+    <h1>Monitoring dashboard</h1>
+    <p class="sub">Live status across all registered mining leases in this district. Track leases, review satellite-flagged alerts, and manage cases end to end.</p>
+
+    <div class="section-title">Live metrics</div>
+    <div class="grid">
+      <div class="card" onclick="goTo('lease')"><div class="k">${LEASES.length}</div><div class="l">Total mining leases</div></div>
+      <div class="card" onclick="goTo('lease','active')"><div class="k">${LEASES.filter(l=>l.active).length}</div><div class="l">Active leases</div></div>
+      <div class="card" onclick="goTo('alertsq','active')"><div class="k">${activeAlerts().length}</div><div class="l">Suspected alerts</div></div>
+      <div class="card" onclick="goTo('alertsq','high')" style="border-top-color:var(--clay)"><div class="k" style="color:var(--clay)">${highRiskActiveAlerts().length}</div><div class="l">High-risk alerts</div></div>
+      <div class="card" onclick="goTo('cases')"><div class="k">${state.cases.length}</div><div class="l">Open cases</div></div>
+      <div class="card" onclick="goTo('alertsq','active')"><div class="k">${sumHa(activeAlerts())} ha</div><div class="l">Affected area</div></div>
+    </div>
+
+    <div class="section-title">Quick actions</div>
+    <div class="actions-row">
+      <button class="btn" onclick="goTo('watch')">Satellite Watch — ${state.watch.filter(w=>w.changeDetected).length} flagged today</button>
+      <button class="btn ghost" onclick="goTo('lease')">Select a lease to investigate</button>
+      <button class="btn ghost" onclick="goTo('alertsq','active')">View pending alerts</button>
+    </div>
+
+    <div class="section-title">District map</div>
+    <div class="panel">
+      <div class="sub" style="margin:0 0 10px">All lease boundaries, current period</div>
+      ${contourMap(false)}
+    </div>
+
+    <div class="section-title">About this platform</div>
+    <div class="panel compact">
+      <p class="sub" style="margin:0">GeoGuard follows the same trigger logic as the Ministry of Mines' <strong style="color:var(--ink)">Mining Surveillance System (MSS)</strong> — built by the Indian Bureau of Mines with BISAG, it flags satellite-detected change within a buffer of a lease boundary for a human officer to verify, rather than making an automatic finding.</p>
+      <div class="stat-inline">
+        <div class="si"><b>500 m</b><span>MSS trigger buffer</span></div>
+        <div class="si"><b>296</b><span>National triggers, 2016–17</span></div>
+        <div class="si"><b>47</b><span>Confirmed cases, same period</span></div>
+      </div>
+      <p class="sub" style="margin-top:12px; font-size:11px">Sand and stone are "minor minerals" under the Mines &amp; Minerals (Development &amp; Regulation) Act, 1957, regulated at state level — in UP by the Directorate of Geology and Mining. Figures: Lok Sabha reply, Jul 2019; RTI analysis, The Wire, 2026.</p>
+    </div>
+  `;
+
+  s.alertsq = `
+    <div class="crumb">Alerts queue</div>
+    <h1>${state.alertFilter==='high' ? 'High-risk alerts' : (state.alertFilter==='active' ? 'Pending alerts' : 'All alerts')}</h1>
+    <p class="sub">
+      ${state.alertFilter==='high'
+        ? `Showing <strong style="color:var(--ink)">${highRiskActiveAlerts().length} high-risk</strong> alert${highRiskActiveAlerts().length===1?'':'s'} (of ${ALERTS.length} total). <a href="#" onclick="goTo('alertsq'); return false;" style="color:var(--moss)">Show all alerts →</a>`
+        : state.alertFilter==='active'
+        ? `Showing <strong style="color:var(--ink)">${activeAlerts().length} pending</strong> alert${activeAlerts().length===1?'':'s'} — excludes closed cases (of ${ALERTS.length} total). <a href="#" onclick="goTo('alertsq'); return false;" style="color:var(--moss)">Show all alerts →</a>`
+        : `Suspected boundary violations across every registered lease in the district, newest first. ${activeAlerts().length} active · ${highRiskActiveAlerts().length} high-risk · ${sumHa(activeAlerts())} ha affected.`}
+    </p>
+    <div class="panel">
+      <table id="alertsTable">
+        <tr><th>Lease</th><th>Khasra</th><th>Village</th><th>Risk</th><th>Area outside</th><th>Detected</th><th>Status</th><th></th></tr>
+        ${(state.alertFilter==='high' ? highRiskActiveAlerts() : state.alertFilter==='active' ? activeAlerts() : ALERTS).map(a=>`<tr>
+          <td>${a.lease}</td><td class="mono">${a.khasra}</td><td>${a.village}</td>
+          <td><span class="pill ${a.risk==='HIGH'?'high':(a.risk==='MEDIUM'?'med':(a.risk==='LOW'?'ok':''))}">${a.risk}</span></td>
+          <td>${a.outside}</td><td>${a.date}</td><td>${a.status}</td>
+          <td>${LEASE_DB[a.khasra]?`<button class="btn ghost" onclick="selectLease('${a.khasra}')">Investigate →</button>`:'—'}</td>
+        </tr>`).join('')}
+      </table>
+    </div>
+    <button class="btn ghost" onclick="goTo('dash')">← Back to dashboard</button>
+  `;
+
+  s.cases = `
+    <div class="crumb">Case management</div>
+    <h1>Cases</h1>
+    <p class="sub">Cases created from confirmed alerts. ${state.cases.length} open case${state.cases.length===1?'':'s'}. Saved to this browser, so they persist across reloads.</p>
+    <div class="panel">
+      ${state.cases.length ? `
+      <table>
+        <tr><th>Case ID</th><th>Khasra</th><th>Lease owner</th><th>Officer</th><th>Priority</th><th>Status</th><th>Created</th><th></th></tr>
+        ${state.cases.map(c=>`<tr>
+          <td class="mono">${c.id}</td><td class="mono">${c.khasra}</td><td>${c.owner}</td><td>${c.officer}</td>
+          <td><span class="pill ${c.priority==='High'?'high':(c.priority==='Medium'?'med':'')}">${c.priority||'—'}</span></td>
+          <td><span class="pill">${c.status}</span></td><td>${c.created}</td>
+          <td><button class="btn ghost" onclick="if(LEASE_DB[c.khasra]){LEASE=LEASE_DB[c.khasra]; RESULT=resultFor(c.khasra); state.currentKhasra=c.khasra; state.currentCaseId=c.id;} goTo('report')">Open →</button></td>
+        </tr>`).join('')}
+      </table>` : `<p class="sub" style="margin:0">No cases yet — open an alert and create a case to see it listed here.</p>`}
+    </div>
+    <button class="btn ghost" onclick="goTo('alertsq')">← Back to alerts</button>
+  `;
+
+  s.lease = `
+    <div class="crumb">Leases</div>
+    <h1>Select a mining lease</h1>
+    <p class="sub">
+      ${state.leaseFilter==='active'
+        ? `Showing <strong style="color:var(--ink)">${LEASES.filter(l=>l.active).length} active</strong> leases (of ${LEASES.length} total). <a href="#" onclick="goTo('lease'); return false;" style="color:var(--moss)">Show all leases →</a>`
+        : `Choose the lease boundary to check against recent satellite imagery. ${LEASES.length} leases registered · ${LEASES.filter(l=>l.active).length} currently active.`}
+    </p>
+    <div class="field" style="max-width:320px">
+      <label>Search by owner, village or khasra no.</label>
+      <input id="leaseSearch" oninput="filterLeases()" placeholder="e.g. Bithoor, 77/1, Trimurti…">
+    </div>
+    <div class="panel">
+      <table id="leaseTable">
+        <tr><th>Owner</th><th>Mineral</th><th>Village</th><th>Khasra No.</th><th>Approved area</th><th></th></tr>
+        ${(state.leaseFilter==='active' ? LEASES.filter(l=>l.active) : LEASES).map(l=>`<tr data-row="${(l.owner+' '+l.village+' '+l.tehsil+' '+l.khasra+' '+l.mineral).toLowerCase()}" style="cursor:${l.active?'pointer':'not-allowed'}; ${l.active?'':'opacity:.4'}" ${l.active?`onclick="selectLease('${l.khasra}')"`:''}>
+          <td>${l.owner}</td><td>${l.mineral}</td><td>${l.village}, ${l.tehsil}</td><td class="mono">${l.khasra}</td><td>${l.area}</td>
+          <td>${l.active?(l.khasra===state.currentKhasra && state.leaseSelected?`<button class="btn ghost" onclick="event.stopPropagation(); selectLease('${l.khasra}')">Selected ✓</button>`:`<button class="btn ghost" onclick="event.stopPropagation(); selectLease('${l.khasra}')">Select</button>`):'<span class="pill">Expired</span>'}</td>
+        </tr>`).join('')}
+      </table>
+    </div>
+    <div class="panel">
+      <strong style="font-size:14px">Lease boundary preview</strong>
+      ${contourMap(false)}
+    </div>
+  `;
+
+  s.upload = `
+    <div class="crumb">Imagery</div>
+    <h1>Upload before / after imagery</h1>
+    <p class="sub">Upload two satellite images of the same lease area, taken on different dates. A DEM raster is optional and enables depth/volume estimation.</p>
+    <div class="two">
+      <div class="field">
+        <label>Before image · acquisition date</label>
+        <div class="dropzone ${state.beforeUploaded?'filled':''}" onclick="if(!requireAuth())return; state.beforeUploaded=true; log('Uploaded before image (14 Jan 2026)'); render()">
+          ${state.beforeUploaded ? '✓ before_2026-01-14.tif — 42.1 MB' : 'Click to upload before image (GeoTIFF / JPEG2000)'}
+        </div>
+      </div>
+      <div class="field">
+        <label>After image · acquisition date</label>
+        <div class="dropzone ${state.afterUploaded?'filled':''}" onclick="if(!requireAuth())return; state.afterUploaded=true; log('Uploaded after image (02 Sep 2026)'); render()">
+          ${state.afterUploaded ? '✓ after_2026-09-02.tif — 44.6 MB' : 'Click to upload after image (GeoTIFF / JPEG2000)'}
+        </div>
+      </div>
+    </div>
+    <div class="field" style="margin-top:4px">
+      <label>DEM raster (optional)</label>
+      <div class="dropzone" style="padding:14px; color:var(--muted)">No DEM uploaded — depth/volume estimation will be skipped</div>
+    </div>
+    <button class="btn" ${(!state.beforeUploaded||!state.afterUploaded)?'disabled':''} onclick="goTo('analysis')">Continue to analysis →</button>
+  `;
+
+  s.analysis = `
+    <div class="crumb">Change detection</div>
+    <h1>Run change-detection analysis</h1>
+    <p class="sub">The imagery is sent to the AI/geospatial engine for alignment, change detection, and boundary comparison.</p>
+    <div class="panel">
+      <div class="imgpair">
+        <div class="imgbox">Before<span class="cap">14 Jan 2026</span></div>
+        <div class="imgbox">After<span class="cap">02 Sep 2026</span></div>
+        <div class="imgbox" id="overlayBox" style="color:var(--muted)">Overlay<span class="cap">pending</span></div>
+      </div>
+      <div class="row" style="margin-top:16px">
+        <button class="btn" id="analyzeBtn" onclick="runAnalysis()" ${state.analysisRun?'disabled':''}>
+          ${state.analysisRun ? 'Analysis complete ✓' : 'Start analysis'}
+        </button>
+        <span id="analyzeStatus" class="sub" style="margin:0"></span>
+      </div>
+      ${state.analysisRun ? `<div style="margin-top:14px"><button class="btn ghost" onclick="goTo('result')">View results →</button></div>` : ''}
+    </div>
+  `;
+
+  s.result = `
+    <div class="crumb">Change result</div>
+    <h1>Change detection result</h1>
+    <div class="row" style="margin-bottom:14px">
+      <span class="pill ${RESULT.risk==='HIGH'?'high':(RESULT.risk==='MEDIUM'?'med':(RESULT.risk==='LOW'?'ok':''))}">Risk: ${RESULT.risk}</span>
+      <span class="pill">Model confidence: ${(RESULT.confidence*100).toFixed(0)}%</span>
+      <span class="pill">Requires field verification</span>
+    </div>
+    <div class="panel">
+      ${contourMap(true)}
+    </div>
+    <div class="grid" style="margin-top:14px">
+      <div class="card"><div class="k">${RESULT.changedArea.toFixed(1)} ha</div><div class="l">Total changed area</div></div>
+      <div class="card"><div class="k">${RESULT.inside.toFixed(1)} ha</div><div class="l">Inside lease</div></div>
+      <div class="card" style="border-top-color:var(--clay)"><div class="k" style="color:var(--clay)">${RESULT.outside.toFixed(1)} ha</div><div class="l">Outside lease (${RESULT.pctOutside}%)</div></div>
+    </div>
+    <div class="panel" style="margin-top:14px">
+      <strong style="font-size:14px">Probable activity: ${RESULT.activity}</strong>
+      <p class="sub" style="margin-top:6px">Detected pattern consistent with sand/aggregate excavation. Classification label: <span class="mono">Possible Boundary Violation — Requires Field Verification</span>.</p>
+      <div class="disclaimer">This is AI-assisted decision-support output. It does not constitute a legal determination of illegal activity — final determination rests with an authorized field officer.</div>
+    </div>
+    <button class="btn" onclick="log('Alert generated from detection'); goTo('alert')">Generate alert →</button>
+    <button class="btn ghost" onclick="exportGeoJSON()" style="margin-left:10px">Export boundary (GeoJSON) ⤓</button>
+  `;
+
+  s.alert = `
+    <div class="crumb">Alert</div>
+    <h1>Alert created</h1>
+    <p class="sub">An alert has been raised for officer review based on the analysis above.</p>
+    <div class="panel">
+      <table>
+        <tr><td style="color:var(--muted); width:160px">Alert type</td><td>Possible Boundary Violation</td></tr>
+        <tr><td style="color:var(--muted)">Risk level</td><td><span class="pill high">HIGH</span></td></tr>
+        <tr><td style="color:var(--muted)">Lease</td><td>${LEASE.owner} — Khasra ${LEASE.khasra}, ${LEASE.village}</td></tr>
+        <tr><td style="color:var(--muted)">Affected area</td><td>${RESULT.changedArea} ha total · ${RESULT.outside} ha outside lease</td></tr>
+        <tr><td style="color:var(--muted)">Dates compared</td><td>14 Jan 2026 → 02 Sep 2026</td></tr>
+        <tr><td style="color:var(--muted)">Confidence</td><td>${(RESULT.confidence*100).toFixed(0)}%</td></tr>
+        <tr><td style="color:var(--muted)">Status</td><td><span class="pill">Requires field verification</span></td></tr>
+      </table>
+    </div>
+    <button class="btn" onclick="goTo('case')">Create case from alert →</button>
+  `;
+
+  s.case = `
+    <div class="crumb">Case</div>
+    <h1>Create case &amp; assign officer</h1>
+    <div class="panel">
+      <div class="field">
+        <label>Case number</label>
+        <input class="mono" value="${state.currentCaseId}" disabled>
+      </div>
+      <div class="field">
+        <label>Assigned officer (from your login)</label>
+        <input value="${state.officer}" disabled class="mono">
+      </div>
+      <div class="field">
+        <label>Priority</label>
+        <select onchange="state.priority=this.value; render()">
+          <option ${state.priority==='High'?'selected':''}>High</option>
+          <option ${state.priority==='Medium'?'selected':''}>Medium</option>
+          <option ${state.priority==='Low'?'selected':''}>Low</option>
+        </select>
+      </div>
+      <button class="btn" ${!state.officer?'disabled':''} onclick="state.caseCreated=true; state.cases.push({id:state.currentCaseId, khasra:LEASE.khasra, owner:LEASE.owner, officer:state.officer, priority:state.priority, status:state.status, created:new Date().toLocaleDateString()}); log('Case '+state.currentCaseId+' created ('+state.priority+' priority), assigned to '+state.officer); goTo('inspect')">Create case →</button>
+    </div>
+  `;
+
+  s.inspect = `
+    <div class="crumb">Inspection</div>
+    <h1>Field verification</h1>
+    <p class="sub">Officer ${state.officer||'—'} records findings from the field visit.</p>
+    <div class="panel">
+      <div class="two">
+        <div class="field"><label>Visit date</label><input value="18 Sep 2026" disabled></div>
+        <div class="field"><label>GPS coordinates</label><input class="mono" value="26.2891° N, 80.0126° E" disabled></div>
+      </div>
+      <div class="field">
+        <label>Geo-tagged inspection photo</label>
+        <div class="dropzone ${state.inspectionDone?'filled':''}" onclick="if(!requireAuth())return; state.inspectionDone=true; log('Inspection photo uploaded, remarks recorded'); render()">
+          ${state.inspectionDone ? '✓ site_photo_001.jpg — geo-tagged' : 'Click to upload site photo'}
+        </div>
+      </div>
+      <div class="field">
+        <label>Officer remarks</label>
+        <textarea rows="3" disabled>${state.inspectionDone ? 'Active excavation confirmed beyond eastern boundary marker. Approx. 3–4 m deep pit observed extending outside sanctioned area. Recommend enforcement action.' : ''}</textarea>
+      </div>
+      <div class="field">
+        <label>Case status</label>
+        <select onchange="state.status=this.value; log('Status changed to '+this.value); render()" ${!state.inspectionDone?'disabled':''}>
+          <option ${state.status==='NEW'?'selected':''}>NEW</option>
+          <option ${state.status==='UNDER_VERIFICATION'?'selected':''}>UNDER_VERIFICATION</option>
+          <option ${state.status==='CONFIRMED_VIOLATION'?'selected':''}>CONFIRMED_VIOLATION</option>
+          <option ${state.status==='NO_VIOLATION'?'selected':''}>NO_VIOLATION</option>
+        </select>
+      </div>
+      <button class="btn" ${!state.inspectionDone?'disabled':''} onclick="goTo('report')">Generate case report →</button>
+    </div>
+  `;
+
+  s.report = `
+    <div class="crumb">Report</div>
+    <h1>Case report</h1>
+    <div id="printArea">
+    <div class="panel" style="background:var(--paper); color:var(--ink)">
+      <div class="row" style="justify-content:space-between; border-bottom:1px solid var(--line); padding-bottom:12px; margin-bottom:12px">
+        <div>
+          <strong>Suspected Unauthorized Activity — Case Report</strong>
+          <div style="font-size:11px; margin-top:2px">Directorate of Geology and Mining, Uttar Pradesh · Minor Mineral (MMDR Act, 1957)</div>
+        </div>
+        <span class="mono" style="font-size:11px">${state.currentCaseId} · Generated ${new Date().toLocaleDateString()}</span>
+      </div>
+      <div class="two" style="font-size:12.5px">
+        <div>
+          <p><strong>Location:</strong> ${LEASE.village}, ${LEASE.tehsil}, ${LEASE.district}</p>
+          <p><strong>Khasra no.:</strong> ${LEASE.khasra}</p>
+          <p><strong>Lease owner:</strong> ${LEASE.owner}</p>
+          <p><strong>Mineral:</strong> ${LEASE.mineral}</p>
+          <p><strong>Lease validity:</strong> ${LEASE.valid}</p>
+        </div>
+        <div>
+          <p><strong>Detected activity:</strong> ${RESULT.activity}</p>
+          <p><strong>Period compared:</strong> 14 Jan 2026 → 02 Sep 2026</p>
+          <p><strong>Changed area:</strong> ${RESULT.changedArea} ha (${RESULT.outside} ha outside lease)</p>
+          <p><strong>Model confidence:</strong> ${(RESULT.confidence*100).toFixed(0)}%</p>
+          <p><strong>Assigned officer:</strong> ${state.officer}</p>
+          <p><strong>Case status:</strong> ${state.status}</p>
+        </div>
+      </div>
+      <div style="margin-top:10px; padding:10px; border:1px dashed var(--ochre); font-size:11.5px">
+        AI and geospatial outputs are decision-support information. Final determination requires authorized field verification.
+      </div>
+      <p style="margin-top:10px; font-size:11px; color:var(--muted)">For reference: a comparably large violation near river Son, Sonbhadra, drew a combined ₹15.96 crore NGT fine on two firms in 2023 — this case's scale (${RESULT.outside} ha outside lease) sits in a similar high-severity range.</p>
+    </div>
+    <div class="panel" style="margin-top:14px">
+      <strong style="font-size:14px">Audit history</strong>
+      <div style="margin-top:8px">
+        ${state.auditLog.map(a=>`<div class="audit"><span class="mono" style="width:70px; color:var(--muted)">${a.t}</span><span>${a.a}</span></div>`).join('') || '<span class="sub">No actions recorded yet.</span>'}
+      </div>
+    </div>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn" onclick="downloadReportPDF()">⬇ Download PDF report</button>
+      <button class="btn ghost" onclick="goTo('dash')">Back to dashboard</button>
+    </div>
+  `;
+
+  s.profile = (()=>{
+    const off = currentOfficer();
+    if(!off) return `<div class="crumb">Profile</div><h1>Not signed in</h1><p class="sub">Sign in to view your officer profile.</p>`;
+    const myCases = state.cases.filter(c=>c.officer && c.officer.indexOf(off.id)>-1);
+    const myLog = state.auditLog.filter(a=>a.u && a.u.indexOf(off.id)>-1);
+    return `
+    <div class="crumb">Officer profile</div>
+    <h1>My profile</h1>
+    <p class="sub">Your Officer ID is what gates satellite checks, imagery uploads and inspection photo capture — it travels with every case and audit entry you create.</p>
+    <div class="idcard">
+      <div class="idcard-inner">
+        <div class="badge-row"><span class="badge-id">${off.id}</span><span class="badge-chip"></span></div>
+        <div class="badge-name">${off.name}</div>
+        <div class="badge-meta">${off.dept} · Registered ${off.joined}</div>
+      </div>
+    </div>
+    <div class="section-title">Work history — cases</div>
+    <div class="panel">
+      ${myCases.length ? `<table>
+        <tr><th>Case ID</th><th>Khasra</th><th>Lease owner</th><th>Priority</th><th>Status</th><th>Created</th><th></th></tr>
+        ${myCases.map(c=>`<tr>
+          <td class="mono">${c.id}</td><td class="mono">${c.khasra}</td><td>${c.owner}</td>
+          <td><span class="pill ${c.priority==='High'?'high':(c.priority==='Medium'?'med':'')}">${c.priority||'—'}</span></td>
+          <td><span class="pill">${c.status}</span></td><td>${c.created}</td>
+          <td><button class="btn ghost" onclick="if(LEASE_DB[c.khasra]){LEASE=LEASE_DB[c.khasra]; RESULT=resultFor(c.khasra); state.currentKhasra=c.khasra; state.currentCaseId=c.id;} goTo('report')">Open →</button></td>
+        </tr>`).join('')}
+      </table>` : `<p class="sub" style="margin:0">No cases created under this ID yet.</p>`}
+    </div>
+    <div class="section-title">Work history — activity log</div>
+    <div class="panel">
+      ${myLog.length ? myLog.slice().reverse().map(a=>`<div class="audit"><span class="mono" style="width:70px; color:var(--muted)">${a.t}</span><span>${a.a}</span></div>`).join('') : `<p class="sub" style="margin:0">No logged activity yet.</p>`}
+    </div>
+    <button class="btn ghost" onclick="logout()">Sign out</button>
+    `;
+  })();
+
+  return s;
+}
+
+function runAnalysis(){
+  const btn = document.getElementById('analyzeBtn');
+  const status = document.getElementById('analyzeStatus');
+  btn.disabled = true;
+  status.innerHTML = '<span class="spin"></span> Aligning images, detecting change…';
+  setTimeout(()=>{
+    document.getElementById('overlayBox').innerHTML = 'Change overlay<span class="cap">generated</span>';
+    document.getElementById('overlayBox').style.color = 'var(--clay)';
+    status.textContent = 'Done.';
+    state.analysisRun = true;
+    log('Ran change-detection analysis: '+RESULT.changedArea.toFixed(1)+' ha changed, '+RESULT.outside.toFixed(1)+' ha outside lease');
+    render();
+  }, 1400);
+}
+
+function render(){
+  renderSidebar();
+  document.getElementById('main').innerHTML = screens()[state.current];
+  saveState();
+}
+function boot(){
+  const off = currentOfficer();
+  const authEl = document.getElementById('authScreen');
+  const side = document.getElementById('side');
+  const main = document.getElementById('main');
+  if(!off){
+    authEl.style.display = 'flex';
+    side.style.display = 'none';
+    main.style.display = 'none';
+    return;
+  }
+  authEl.style.display = 'none';
+  side.style.display = '';
+  main.style.display = '';
+  loadState();
+  if(state.currentKhasra && LEASE_DB[state.currentKhasra]){
+    LEASE = LEASE_DB[state.currentKhasra];
+    RESULT = resultFor(state.currentKhasra);
+  }
+  render();
+}
+boot();
+</script>
+</body>
+</html>
